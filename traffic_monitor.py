@@ -2,11 +2,42 @@ import argparse
 from datetime import datetime, timedelta
 
 import cv2
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
 from ultralytics import YOLO
 import json
 import os
 
 screen_title = "Traffic Monitor"
+
+FONT_PATH_CANDIDATES = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
+    "C:\\Windows\\Fonts\\arial.ttf",
+]
+
+
+def load_font(size):
+    for path in FONT_PATH_CANDIDATES:
+        if os.path.exists(path):
+            return ImageFont.truetype(path, size)
+    print("Aviso: nenhuma fonte TrueType encontrada, acentos podem não aparecer corretamente.")
+    return ImageFont.load_default()
+
+
+def draw_texts_pt(frame_bgr, texts, font):
+    image_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+    pil_image = Image.fromarray(image_rgb)
+    draw = ImageDraw.Draw(pil_image)
+    for text, position, color_bgr in texts:
+        color_rgb = (color_bgr[2], color_bgr[1], color_bgr[0])
+        draw.text(position, text, font=font, fill=color_rgb)
+    result_rgb = np.array(pil_image)
+    return cv2.cvtColor(result_rgb, cv2.COLOR_RGB2BGR)
+
+
+overlay_font = load_font(20)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--video", default="video.mp4")
@@ -147,12 +178,15 @@ while cap.isOpened():
                                 else:
                                     print(f"[IGNORE] Veículo {track_id} retornou pela mesma linha {name}")
 
-    y_offset = 30
+    y_offset = 20
+    counter_texts = []
 
     for name, counts in counters.items():
         text = f"{name}: Entradas={counts['in']}, Saídas={counts['out']}"
-        cv2.putText(annotated_frame, text, (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
-        y_offset += 25
+        counter_texts.append((text, (10, y_offset), (255, 255, 0)))
+        y_offset += 28
+
+    annotated_frame = draw_texts_pt(annotated_frame, counter_texts, overlay_font)
 
     cv2.imshow(screen_title, annotated_frame)
 
