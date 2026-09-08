@@ -1,20 +1,35 @@
+import argparse
+from datetime import datetime, timedelta
+
 import cv2
 from ultralytics import YOLO
 import json
 import os
-from datetime import datetime
+
+screen_title = "Traffic Monitor"
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--video", default="video.mp4")
+parser.add_argument("--start-datetime", required=True, help="Formato: YYYY-MM-DD HH:MM:SS (horário real do início da filmagem)")
+parser.add_argument("--output-dir", default="output")
+args = parser.parse_args()
+
+video_start_datetime = datetime.strptime(args.start_datetime, "%Y-%m-%d %H:%M:%S")
 
 model = YOLO('yolo11n.pt')
 
-cap = cv2.VideoCapture('video.mp4')
+cap = cv2.VideoCapture(args.video)
 
 assert cap.isOpened(), "Error: Cannot open video file"
 
+fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+frame_count = 0
+
 lines = [
-    ('South', (125, 435), (1100, 445)),
-    ('North', (845, 315), (340, 305)),
-    ('East', (1100, 415), (950, 335)),
-    ('West', (275, 300), (100, 425)),
+    ('1', (125, 435), (1100, 445)),
+    ('3', (845, 315), (340, 305)),
+    ('2', (1100, 415), (950, 335)),
+    ('4', (275, 300), (100, 425)),
 ]
 
 track_history = {}
@@ -24,7 +39,7 @@ counters = {name: {'in': 0, 'out': 0, 'crossed': set()} for name, _, _ in lines}
 
 def get_crossing_direction(line_p1, line_p2, prev_pt, curr_pt):
     line_vec = (line_p2[0] - line_p1[0], line_p2[1] - line_p1[1])
-    
+
     def get_side(p):
         return (line_vec[0] * (p[1] - line_p1[1])) - (line_vec[1] * (p[0] - line_p1[0]))
 
@@ -45,6 +60,9 @@ while cap.isOpened():
     if not ret:
         break
 
+    frame_count += 1
+    current_datetime = video_start_datetime + timedelta(seconds=frame_count / fps)
+
     results = model.track(
         frame,
         persist=True,
@@ -57,23 +75,8 @@ while cap.isOpened():
     annotated_frame = results[0].plot()
 
     for name, p1, p2 in lines:
-        cv2.line(
-            annotated_frame,
-            p1,
-            p2,
-            (0, 255, 255),
-            3
-        )
-
-        cv2.putText(
-            annotated_frame,
-            name,
-            (p1[0], p1[1] - 10),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.7,
-            (0, 255, 255),
-            2
-        )
+        cv2.line(annotated_frame, p1, p2, (0, 255, 255), 3)
+        cv2.putText(annotated_frame, name, (p1[0], p1[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
 
     boxes = results[0].boxes if len(results) > 0 else []
 
@@ -93,7 +96,9 @@ while cap.isOpened():
                 vehicle_trips[track_id] = {
                     'type': class_name,
                     'entry': None,
+                    'entry_time': None,
                     'exit': None,
+                    'exit_time': None,
                     'status': 'tracking'
                 }
 
@@ -116,64 +121,53 @@ while cap.isOpened():
                         continue
 
                     direction = get_crossing_direction(p1, p2, prev_pt, curr_pt)
-                    
+
                     if direction:
                         counters[name][direction] += 1
                         counters[name]['crossed'].add(track_id)
-                        
+
                         trip = vehicle_trips[track_id]
-                        
+
                         if direction == 'in':
                             if trip['entry'] is None:
                                 trip['entry'] = name
+                                trip['entry_time'] = current_datetime.isoformat()
                                 trip['status'] = 'inside_intersection'
 
-                                print(f"[ENTRADA] Veículo {track_id} ({class_name}) entrou por {name}")
-                        
+                                print(f"[ENTRADA] Veículo {track_id} ({class_name}) entrou por {name} às {current_datetime}")
+
                         elif direction == 'out':
                             if trip['entry'] is not None and trip['exit'] is None:
                                 if name != trip['entry']:
                                     trip['exit'] = name
+                                    trip['exit_time'] = current_datetime.isoformat()
                                     trip['status'] = 'completed'
 
-                                    print(f"[SAÍDA] Veículo {track_id} ({class_name}) saiu por {name}")
+                                    print(f"[SAÍDA] Veículo {track_id} ({class_name}) saiu por {name} às {current_datetime}")
                                 else:
                                     print(f"[IGNORE] Veículo {track_id} retornou pela mesma linha {name}")
 
     y_offset = 30
 
     for name, counts in counters.items():
-        text = f"{name}: In={counts['in']}, Out={counts['out']}"
-
-        cv2.putText(
-            annotated_frame,
-            text,
-            (10, y_offset),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.6,
-            (255, 255, 0),
-            2
-        )
-        
+        text = f"{name}: Entradas={counts['in']}, Saídas={counts['out']}"
+        cv2.putText(annotated_frame, text, (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
         y_offset += 25
 
-    cv2.imshow('Traffic Counter', annotated_frame)
+    cv2.imshow(screen_title, annotated_frame)
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
         print("\nFinalizando e salvando dados...")
-
         break
 
 cap.release()
 cv2.destroyAllWindows()
 
-output_dir = 'output'
-
-os.makedirs(output_dir, exist_ok=True)
+os.makedirs(args.output_dir, exist_ok=True)
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 filename = f"traffic_data_{timestamp}.json"
-output_file = os.path.join(output_dir, filename)
+output_file = os.path.join(args.output_dir, filename)
 
 with open(output_file, 'w', encoding='utf-8') as f:
     json.dump(vehicle_trips, f, indent=4, ensure_ascii=False)
