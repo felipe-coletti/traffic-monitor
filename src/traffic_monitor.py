@@ -6,12 +6,12 @@ from datetime import datetime, timedelta
 import cv2
 import numpy as np
 
-from config import logger
-from counter import LineCounterEngine
-from detector import VehicleDetector
-from exporter import DataExporter
-from models import SessionStats, VehicleTrip
-from renderer import VideoRenderer
+from .config import logger
+from .counter import LineCounterEngine
+from .detector import VehicleDetector
+from .exporter import DataExporter
+from .models import SessionStats, VehicleTrip
+from .renderer import VideoRenderer
 
 class TrafficMonitor:
     """Orquestra detecção, contagem, renderização e exportação."""
@@ -100,7 +100,7 @@ class TrafficMonitor:
                 curr_pt = self.track_history[track_id][-1]
 
                 events = self.counter_engine.check_crossing(
-                    track_id, prev_pt, curr_pt, current_time
+                    track_id, class_name, prev_pt, curr_pt, current_time
                 )
 
                 for line_name, direction, event_time in events:
@@ -172,8 +172,15 @@ class TrafficMonitor:
         total_exits = sum(c.out_count for c in self.counter_engine.counters.values())
 
         per_line = {
-            name: {"entries": c.in_count, "exits": c.out_count}
-            for name, c in self.counter_engine.counters.items()
+            name: {
+                "entries": counter.in_count,
+                "exits": counter.out_count,
+                "by_type": {
+                    vehicle_type: dict(counts)
+                    for vehicle_type, counts in counter.by_type.items()
+                },
+            }
+            for name, counter in self.counter_engine.counters.items()
         }
 
         per_vehicle_type = defaultdict(lambda: {"total": 0, "completed": 0})

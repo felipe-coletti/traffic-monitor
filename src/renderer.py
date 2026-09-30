@@ -16,7 +16,6 @@ class VideoRenderer:
         if track_id not in self.trajectory_colors:
             self._color_counter += 1
             # Gerar cores distintas por HSV
-            hue = (self._color_counter * 37) % 180
             color = cv2.cvtColor(
                 np.uint8([[[[np.random.randint(50, 200), np.random.randint(50, 200), 255]]]]),
                 cv2.COLOR_HSV2BGR,

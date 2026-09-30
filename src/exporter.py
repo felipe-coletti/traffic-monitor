@@ -1,5 +1,12 @@
+import csv
+from dataclasses import asdict
 from datetime import datetime
+import json
 from pathlib import Path
+from typing import Optional
+
+from .config import logger
+from .models import SessionStats, VehicleTrip
 
 
 class DataExporter:
@@ -9,14 +16,17 @@ class DataExporter:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-    def _filename(self, suffix: str) -> Path:
+    def _filename(self, suffix: str, extension: str) -> Path:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        return self.output_dir / f"traffic_data_{timestamp}_{suffix}.json"
+
+        return self.output_dir / (
+            f"traffic_data_{timestamp}_{suffix}.{extension}"
+        )
 
     def export_json(self, trips: dict[int, VehicleTrip],
                     stats: SessionStats, filepath: Optional[Path] = None):
         """Exporta relatório completo em JSON."""
-        filepath = filepath or self._filename("report")
+        filepath = filepath or self._filename("report", "json")
 
         data = {
             "session_info": {
@@ -27,14 +37,7 @@ class DataExporter:
                 "total_entries": stats.total_entries,
                 "total_exits": stats.total_exits,
             },
-            "per_line": {
-                name: {
-                    "entries": counter.in_count,
-                    "exits": counter.out_count,
-                    "by_type": dict(counter.by_type),
-                }
-                for name, counter in globals().get('_counters', {}).items()
-            },
+            "per_line": stats.per_line,
             "per_vehicle_type": stats.per_vehicle_type,
             "vehicle_trips": {
                 str(tid): asdict(trip) for tid, trip in trips.items()
@@ -49,7 +52,7 @@ class DataExporter:
 
     def export_csv(self, trips: dict[int, VehicleTrip], filepath: Optional[Path] = None):
         """Exporta trajetórias detalhadas em CSV."""
-        filepath = filepath or self._filename("trips")
+        filepath = filepath or self._filename("trips", "csv")
 
         with open(filepath, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)

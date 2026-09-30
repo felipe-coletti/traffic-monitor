@@ -1,13 +1,11 @@
 import numpy as np
 from ultralytics import YOLO
 
-from config import logger
+from .config import VEHICLE_CLASS_IDS, logger
 
 
 class VehicleDetector:
     """Carrega modelo YOLO e executa detecção + tracking."""
-
-    VEHICLE_CLASSES = {2: "bicycle", 3: "motorcycle", 5: "bus", 7: "truck"}
 
     def __init__(self, model_path: str = "yolo11n.pt", conf: float = 0.35):
         self.model_path = model_path
@@ -25,7 +23,7 @@ class VehicleDetector:
             frame,
             persist=True,
             tracker='bytetrack.yaml',
-            classes=list(self.VEHICLE_CLASSES.keys()),
+            classes=list(VEHICLE_CLASS_IDS.keys()),
             conf=self.conf,
             verbose=False,
         )
